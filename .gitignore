@@ -11,6 +11,8 @@ dist/
 /.localnet-smoke/
 # Per-clone local env (port offsets etc.); keep .env.example checked in.
 /.env
+/.env.*
+!/.env.example
 /forester/target/
 /forester/test-ledger/
 /forester/logs/
@@ -21,7 +23,6 @@ test-ledger
 .DS_Store
 /.idea
 .claude
-docs
 experiments
 docs/api/
 docs/docs.md
