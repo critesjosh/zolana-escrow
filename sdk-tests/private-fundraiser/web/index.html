@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Private fundraiser (localnet)</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Private fundraiser</h1>
+      <p class="banner" role="note">
+        Localnet only. Every role on this page is a disposable test identity whose seed is stored in
+        this browser's localStorage, and the coordinator's private store lives there too. Never use
+        it with real funds, and never paste a real wallet seed anywhere on this page.
+      </p>
+    </header>
+
+    <main>
+      <section aria-labelledby="roles-h">
+        <h2 id="roles-h">1. Identities</h2>
+        <p class="hint">
+          The coordinator creates campaigns, co-signs contributions and settles. Contributors fund
+          campaigns from their shielded balance. The beneficiary only receives the payout.
+        </p>
+        <table data-testid="roles">
+          <thead>
+            <tr>
+              <th>Role</th>
+              <th>Solana address (public)</th>
+              <th>Public SOL</th>
+              <th>Shielded SOL (private to the role)</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <form data-testid="fund-form">
+          <label
+            >Role
+            <select name="role">
+              <option value="alice">Alice (contributor)</option>
+              <option value="bob">Bob (contributor)</option>
+            </select>
+          </label>
+          <label>Amount (SOL) <input name="amount" value="0.5" inputmode="decimal" /></label>
+          <button type="submit">Airdrop and deposit</button>
+        </form>
+        <p data-testid="indexer-slot">Indexed up to slot …</p>
+        <button type="button" data-testid="refresh">Refresh from indexer</button>
+        <button type="button" data-testid="reset" class="secondary">New identities</button>
+      </section>
+
+      <section aria-labelledby="create-h">
+        <h2 id="create-h">2. Create a campaign (coordinator)</h2>
+        <form data-testid="create-form">
+          <label>Target (SOL) <input name="target" value="0.4" inputmode="decimal" /></label>
+          <label
+            >Contributions close in (seconds)
+            <input name="contribution" value="90" inputmode="numeric" />
+          </label>
+          <label
+            >Settlement window (seconds)
+            <input name="settlement" value="60" inputmode="numeric" />
+          </label>
+          <button type="submit">Create campaign</button>
+        </form>
+        <p class="hint">
+          Terms are public and fixed at creation: target, deadlines, coordinator and beneficiary. A
+          campaign accepts at most four contributions.
+        </p>
+      </section>
+
+      <section aria-labelledby="campaigns-h">
+        <h2 id="campaigns-h">3. Campaigns</h2>
+        <p data-testid="chain-time">On-chain clock: …</p>
+        <label class="toggle"
+          ><input type="checkbox" data-testid="coordinator-offline" /> Simulate a coordinator outage
+          (no co-signing, no settlement)</label
+        >
+        <ul data-testid="campaigns"></ul>
+      </section>
+
+      <section aria-labelledby="progress-h">
+        <h2 id="progress-h">Progress</h2>
+        <ol data-testid="stages"></ol>
+        <p data-testid="status" role="status"></p>
+      </section>
+
+      <section aria-labelledby="privacy-h">
+        <h2 id="privacy-h">What is private</h2>
+        <ul>
+          <li>
+            <strong>Confidential from observers:</strong> each contribution amount and the total
+            raised. A successful settlement only shows that the total reached the target.
+          </li>
+          <li>
+            <strong>Public:</strong> campaign terms, each contributor's Solana address, the number
+            of contributions, which instruction ran and the outcome.
+          </li>
+          <li>
+            <strong>Known to the coordinator:</strong> every contribution amount; it must hold every
+            preimage to settle. Nobody can contribute unless it is online and co-signs, so it can
+            delay or refuse contributions, and if it never settles the campaign fails and everyone
+            refunds, even when the target was met. It cannot move funds anywhere but the beneficiary
+            or back to contributors.
+          </li>
+          <li><strong>Known to the beneficiary:</strong> the total it receives.</li>
+          <li>
+            <strong>Not hidden from the prover:</strong> SPP proofs are built by the local prover
+            server, which receives the full private transaction.
+          </li>
+        </ul>
+      </section>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
