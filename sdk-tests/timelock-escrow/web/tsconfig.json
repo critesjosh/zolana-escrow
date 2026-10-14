@@ -1,0 +1,15 @@
+{
+  "extends": "../../../sdk-libs/ts/tsconfig.json",
+  "compilerOptions": {
+    "declaration": false,
+    "noEmit": true,
+    "types": ["node", "vite/client"]
+  },
+  "include": [
+    "src/**/*.ts",
+    "tests/**/*.ts",
+    "*.ts",
+    "../typescript/core.ts",
+    "../typescript/wasm-types.ts"
+  ]
+}

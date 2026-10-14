@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Timelock escrow (localnet)</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Timelock escrow</h1>
+      <p class="banner" role="note">
+        Localnet only. This page uses a disposable test identity stored in this browser. Never use
+        it with real funds, and never paste a real wallet seed anywhere on this page.
+      </p>
+    </header>
+
+    <main>
+      <section aria-labelledby="identity-h">
+        <h2 id="identity-h">1. Identity</h2>
+        <dl>
+          <dt>Solana address (public)</dt>
+          <dd><code data-testid="solana-address">loading…</code></dd>
+          <dt>Escrow authority PDA (public, derived from the address)</dt>
+          <dd><code data-testid="escrow-authority">…</code></dd>
+          <dt>Public SOL</dt>
+          <dd data-testid="public-balance">…</dd>
+          <dt>Shielded SOL (only you can see this)</dt>
+          <dd data-testid="shielded-balance">…</dd>
+          <dt>Indexed up to slot</dt>
+          <dd data-testid="slot">…</dd>
+        </dl>
+        <p class="hint">
+          No registration step: deposits, escrows and withdrawals all pay this identity's own
+          shielded address, so no other party needs to look it up.
+        </p>
+        <button type="button" data-testid="refresh">Refresh from indexer</button>
+        <button type="button" data-testid="reset" class="secondary">New identity</button>
+      </section>
+
+      <section aria-labelledby="fund-h">
+        <h2 id="fund-h">2. Fund and deposit</h2>
+        <form data-testid="fund-form">
+          <label>Amount (SOL) <input name="amount" value="0.5" inputmode="decimal" /></label>
+          <button type="submit">Airdrop and deposit</button>
+        </form>
+      </section>
+
+      <section aria-labelledby="lock-h">
+        <h2 id="lock-h">3. Lock</h2>
+        <form data-testid="lock-form">
+          <label>Amount (SOL) <input name="amount" value="0.3" inputmode="decimal" /></label>
+          <label
+            >Unlock in (seconds)
+            <input name="delay" value="60" inputmode="numeric" />
+          </label>
+          <button type="submit">Lock in escrow</button>
+        </form>
+        <p class="hint">
+          The amount stays confidential. The unlock time is committed privately now and revealed
+          when you withdraw.
+        </p>
+      </section>
+
+      <section aria-labelledby="escrows-h">
+        <h2 id="escrows-h">4. Your escrows</h2>
+        <p class="hint">
+          Found by querying the indexer for your escrow-authority tag and decrypting with your
+          viewing key. Reload the page: the same query finds them again.
+        </p>
+        <p class="warning" data-testid="page-full" hidden>
+          The indexer returned a full page of 50 transactions. Older escrows may be missing.
+        </p>
+        <p data-testid="chain-time">On-chain clock: …</p>
+        <ul data-testid="escrows"></ul>
+      </section>
+
+      <section aria-labelledby="progress-h">
+        <h2 id="progress-h">Progress</h2>
+        <ol data-testid="stages"></ol>
+        <p data-testid="status" role="status"></p>
+      </section>
+
+      <section aria-labelledby="privacy-h">
+        <h2 id="privacy-h">What is private</h2>
+        <ul>
+          <li><strong>Confidential:</strong> the amount locked and your shielded balance.</li>
+          <li>
+            <strong>Public:</strong> your Solana address, which instruction ran (lock or withdraw),
+            the escrow-authority PDA, and the asset (SOL).
+          </li>
+          <li><strong>Revealed at withdraw:</strong> the unlock time.</li>
+          <li>
+            <strong>Not hidden from the prover:</strong> the SPP proof is built by the local prover
+            server, which receives the full private transaction.
+          </li>
+        </ul>
+      </section>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

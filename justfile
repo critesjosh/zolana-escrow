@@ -852,20 +852,23 @@ escrow-wasm-node-dir := "target/zk/timelock-escrow-program/wasm-node"
 build-escrow-wasm-node:
     cargo run --release -q -p zolana-cli -- zk compile -p timelock-escrow-program --skip-r1cs --skip-keys --wasm-target nodejs --wasm-out {{escrow-wasm-node-dir}}
 
-test-escrow-ts: build-programs build-prover-server build-cli ensure-photon build-escrow-wasm-node
+# Stops this checkout's escrow localnet services by the ports they bind.
+escrow-localnet-stop:
+    #!/usr/bin/env bash
+    lsof -ti "tcp:{{localnet-photon-port}}" 2>/dev/null | xargs kill -9 2>/dev/null || true
+    lsof -ti "tcp:{{localnet-prover-port}}" 2>/dev/null | xargs kill -9 2>/dev/null || true
+    {{stop-localnet-backends}}
+
+# Starts a localnet with the shielded pool and the timelock escrow, Photon and
+# the prover, keeping its state in `workdir` (deleted first). The services keep
+# running; stop them with `just escrow-localnet-stop`.
+escrow-localnet workdir="target/escrow-localnet": build-programs build-prover-server build-cli ensure-photon ensure-surfpool escrow-localnet-stop
     #!/usr/bin/env bash
     set -euo pipefail
     program_ids="$(cargo run -q -p xtask -- program-ids)"
     eval "$program_ids"
     : "${SHIELDED_POOL_PROGRAM_ID:?xtask did not emit SHIELDED_POOL_PROGRAM_ID}"
-    workdir="target/escrow-ts"
-    cleanup() {
-      lsof -ti "tcp:{{localnet-photon-port}}" 2>/dev/null | xargs kill -9 2>/dev/null || true
-      lsof -ti "tcp:{{localnet-prover-port}}" 2>/dev/null | xargs kill -9 2>/dev/null || true
-      {{stop-localnet-backends}}
-    }
-    trap cleanup EXIT
-    cleanup
+    workdir="{{workdir}}"
     rm -rf "$workdir"
     mkdir -p "$workdir"
     export ZOLANA_CONFIG_DIR="$PWD/$workdir"
@@ -884,6 +887,12 @@ test-escrow-ts: build-programs build-prover-server build-cli ensure-photon build
       --log-dir "$workdir/logs" \
       --sbf-program "$SHIELDED_POOL_PROGRAM_ID" target/deploy/shielded_pool_program.so \
       --sbf-program {{escrow-program-id}} target/deploy/timelock_escrow_program.so
+
+test-escrow-ts: build-escrow-wasm-node
+    #!/usr/bin/env bash
+    set -euo pipefail
+    trap 'just escrow-localnet-stop' EXIT
+    just escrow-localnet target/escrow-ts
     npm run build:ts
     npm run check:ts:escrow
     ZOLANA_LOCALNET_URL="{{localnet-rpc-url}}" \
@@ -891,6 +900,35 @@ test-escrow-ts: build-programs build-prover-server build-cli ensure-photon build
       ZOLANA_PROVER_URL="{{localnet-prover-url}}" \
       TIMELOCK_ESCROW_PROGRAM_ID="{{escrow-program-id}}" \
       npm run test:ts:escrow
+
+escrow-web-dir := "sdk-tests/timelock-escrow/web"
+
+# Runs the timelock escrow web example on a fresh localnet (see its README).
+# Ctrl-C stops the dev server and the localnet.
+escrow-web: build-escrow-wasm
+    #!/usr/bin/env bash
+    set -euo pipefail
+    trap 'just escrow-localnet-stop' EXIT
+    just escrow-localnet target/escrow-web
+    npm run build:ts
+    TIMELOCK_ESCROW_PROGRAM_ID="{{escrow-program-id}}" npm run dev --workspace timelock-escrow-web
+
+# The web example's unit tests, typecheck and lint; needs no localnet.
+check-escrow-web: build-escrow-wasm
+    npm run build:ts
+    npx oxfmt --check {{escrow-web-dir}} sdk-tests/timelock-escrow/typescript
+    npx oxlint --deny-warnings {{escrow-web-dir}} sdk-tests/timelock-escrow/typescript
+    npm run typecheck --workspace timelock-escrow-web
+    npm run test:unit --workspace timelock-escrow-web
+
+# Drives the web example in Chromium against a fresh localnet: deposit, lock,
+# early withdraw rejected, withdraw after unlock, reload recovery.
+test-escrow-web: check-escrow-web
+    #!/usr/bin/env bash
+    set -euo pipefail
+    trap 'just escrow-localnet-stop' EXIT
+    just escrow-localnet target/escrow-web-test
+    TIMELOCK_ESCROW_PROGRAM_ID="{{escrow-program-id}}" npm run test:e2e --workspace timelock-escrow-web
 
 # Writes the ZK program SDK wasm fixtures: the seeded proving keys and a
 # throwaway snarkjs zkey under target/zk-program-wasm-fixtures (not
