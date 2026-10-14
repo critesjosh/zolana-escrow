@@ -6003,6 +6003,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "private-fundraiser-program"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "borsh",
+ "bytemuck",
+ "groth16-solana",
+ "light-program-profiler",
+ "pinocchio 0.11.2",
+ "pinocchio-system",
+ "solana-address 2.6.1",
+ "solana-instruction",
+ "solana-keypair",
+ "solana-program-error",
+ "solana-signature",
+ "solana-signer",
+ "thiserror 2.0.20",
+ "wincode",
+ "zolana-account-checks",
+ "zolana-client",
+ "zolana-hasher",
+ "zolana-interface",
+ "zolana-keypair",
+ "zolana-macros",
+ "zolana-program",
+ "zolana-program-test",
+ "zolana-transaction",
+]
+
+[[package]]
 name = "proc-macro-crate"
 version = "3.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
