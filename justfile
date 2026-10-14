@@ -901,6 +901,86 @@ test-escrow-ts: build-escrow-wasm-node
       TIMELOCK_ESCROW_PROGRAM_ID="{{escrow-program-id}}" \
       npm run test:ts:escrow
 
+fundraiser-program-id := "5RuvJhVQwXJUjwq1XDZA27rqu6ZA62PFh7QuJxPQoNFX"
+fundraiser-wasm-node-dir := "target/zk/private-fundraiser-program/wasm-node"
+
+build-fundraiser-wasm-node:
+    cargo run --release -q -p zolana-cli -- zk compile -p private-fundraiser-program --skip-r1cs --skip-keys --wasm-target nodejs --wasm-out {{fundraiser-wasm-node-dir}}
+
+build-fundraiser-wasm:
+    cargo run --release -q -p zolana-cli -- zk compile -p private-fundraiser-program --skip-r1cs --skip-keys
+
+# Starts a localnet with the shielded pool and the private fundraiser, Photon
+# and the prover, keeping its state in `workdir` (deleted first). Stop it with
+# `just escrow-localnet-stop`, which frees the same ports.
+fundraiser-localnet workdir="target/fundraiser-localnet": build-programs build-prover-server build-cli ensure-photon ensure-surfpool escrow-localnet-stop
+    #!/usr/bin/env bash
+    set -euo pipefail
+    program_ids="$(cargo run -q -p xtask -- program-ids)"
+    eval "$program_ids"
+    : "${SHIELDED_POOL_PROGRAM_ID:?xtask did not emit SHIELDED_POOL_PROGRAM_ID}"
+    workdir="{{workdir}}"
+    rm -rf "$workdir"
+    mkdir -p "$workdir"
+    export ZOLANA_CONFIG_DIR="$PWD/$workdir"
+    photon_bin="{{photon-bin}}"
+    [[ "$photon_bin" = /* ]] || photon_bin="$PWD/$photon_bin"
+    export ZOLANA_PHOTON_BIN="$photon_bin"
+    keys_dir="{{spp-keys-dir}}"
+    [[ "$keys_dir" = /* ]] || keys_dir="$PWD/$keys_dir"
+    export ZOLANA_PROVER_KEYS_DIR="$keys_dir"
+    accounts_dir="$workdir/accounts"
+    cargo run -q -p xtask -- generate-account-snapshots \
+      --deploy-dir target/deploy --accounts-dir "$accounts_dir"
+    target/debug/zolana dev start \
+      --rpc-port {{localnet-rpc-port}} --prover-port {{localnet-prover-port}} \
+      --photon-port {{localnet-photon-port}} --account-dir "$accounts_dir" \
+      --log-dir "$workdir/logs" \
+      --sbf-program "$SHIELDED_POOL_PROGRAM_ID" target/deploy/shielded_pool_program.so \
+      --sbf-program {{fundraiser-program-id}} target/deploy/private_fundraiser_program.so
+
+# Private fundraiser TypeScript lifecycle on a fresh localnet
+test-fundraiser-ts: build-fundraiser-wasm-node
+    #!/usr/bin/env bash
+    set -euo pipefail
+    trap 'just escrow-localnet-stop' EXIT
+    just fundraiser-localnet target/fundraiser-ts
+    npm run build:ts
+    npm run check:ts:fundraiser
+    ZOLANA_LOCALNET_URL="{{localnet-rpc-url}}" \
+      ZOLANA_INDEXER_URL="{{localnet-photon-url}}" \
+      ZOLANA_PROVER_URL="{{localnet-prover-url}}" \
+      PRIVATE_FUNDRAISER_PROGRAM_ID="{{fundraiser-program-id}}" \
+      npm run test:ts:fundraiser
+
+fundraiser-web-dir := "sdk-tests/private-fundraiser/web"
+
+# Runs the private fundraiser web example on a fresh localnet (see its README).
+# Ctrl-C stops the dev server and the localnet.
+fundraiser-web: build-fundraiser-wasm
+    #!/usr/bin/env bash
+    set -euo pipefail
+    trap 'just escrow-localnet-stop' EXIT
+    just fundraiser-localnet target/fundraiser-web
+    npm run build:ts
+    PRIVATE_FUNDRAISER_PROGRAM_ID="{{fundraiser-program-id}}" npm run dev --workspace private-fundraiser-web
+
+# The fundraiser web example's format, lint, typecheck and unit tests; needs no localnet.
+check-fundraiser-web: build-fundraiser-wasm
+    npm run build:ts
+    npx oxfmt --check {{fundraiser-web-dir}} sdk-tests/private-fundraiser/typescript
+    npx oxlint --deny-warnings {{fundraiser-web-dir}} sdk-tests/private-fundraiser/typescript
+    npm run typecheck --workspace private-fundraiser-web
+    npm run test:unit --workspace private-fundraiser-web
+
+# The fundraiser web example in Chromium against a fresh localnet.
+test-fundraiser-web: check-fundraiser-web
+    #!/usr/bin/env bash
+    set -euo pipefail
+    trap 'just escrow-localnet-stop' EXIT
+    just fundraiser-localnet target/fundraiser-web-test
+    PRIVATE_FUNDRAISER_PROGRAM_ID="{{fundraiser-program-id}}" npm run test:e2e --workspace private-fundraiser-web
+
 escrow-web-dir := "sdk-tests/timelock-escrow/web"
 
 # Runs the timelock escrow web example on a fresh localnet (see its README).
@@ -1336,6 +1416,21 @@ test-swap-validator: ensure-swap-keys build-programs build-prover-server build-c
 # escrow's verifying keys before building its program.
 test-escrow-validator: build-programs build-prover-server build-cli ensure-photon
     ZOLANA_PHOTON_BIN="{{photon-bin}}" tools/ci/nextest-suite.sh -p timelock-escrow-program --features localnet --test escrow
+
+# Writes the private fundraiser's r1cs and insecure test keys, then checks its
+# circuits natively and in R1CS and verifies their proofs with the program's
+# generated verifiers.
+# Private fundraiser circuit tests (no validator)
+test-fundraiser-circuits:
+    cargo run --release -q -p zolana-cli -- build-zk-program -p private-fundraiser-program --skip-wasm --skip-sbf
+    cargo test --release -p private-fundraiser-program --features circuits --test zk_functional --test error_codes
+
+# Success, failure with refunds, and the rejections in between
+# (sdk-tests/private-fundraiser/program/tests/fundraiser.rs). Each test waits
+# for its campaign's real-time deadlines, about three minutes.
+# Private fundraiser lifecycle on local validators
+test-fundraiser-validator: build-programs build-prover-server build-cli ensure-photon
+    ZOLANA_PHOTON_BIN="{{photon-bin}}" tools/ci/nextest-suite.sh -p private-fundraiser-program --features localnet --test fundraiser --release
 
 # Runs the swap and escrow lifecycle suites back to back in one CI job.
 test-swap-and-escrow-validator: test-swap-validator test-escrow-validator
