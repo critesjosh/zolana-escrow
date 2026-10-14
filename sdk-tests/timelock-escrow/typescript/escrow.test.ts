@@ -15,8 +15,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   ESCROW_OUTPUT_SLOT,
+  NOT_YET_UNLOCKED,
   airdrop,
+  chainUnixTimestamp,
   clientConfig,
+  customErrorCode,
   creatorTransactions,
   escrowAuthority,
   escrowInstruction,
@@ -33,7 +36,9 @@ import { wasm, wasmLoadMs } from "./wasm.js";
 
 const DEPOSITS = [250_000_000n, 250_000_000n] as const;
 const LOCK_AMOUNT = 300_000_000n;
-const UNLOCK_TIMESTAMP = 1_000_000n;
+// Long enough to prove and attempt a withdraw before unlock, short enough to
+// wait out the lock in real time.
+const UNLOCK_DELAY_SECONDS = 20n;
 const CREATOR_LAMPORTS = 2_000_000_000n;
 
 function total(utxos: readonly ProgramWalletUtxo[]): bigint {
@@ -48,7 +53,7 @@ describe("timelock escrow", () => {
     const programId = escrowProgramId();
     const creator = randomKeypair();
     const signer = creator.toSolanaSigner();
-    await airdrop(config, signer.address, CREATOR_LAMPORTS);
+    await airdrop(client, signer.address, CREATOR_LAMPORTS);
     const send = sendAndConfirmFactory(client, signer);
     const creatorKeys = LocalKeys.fromKeypair(creator, client.proofService);
     const programNullifierKey = ProgramOwner.nullifierKey();
@@ -90,13 +95,14 @@ describe("timelock escrow", () => {
         utxos: DEPOSITS.length,
       });
 
+      const unlock = (await chainUnixTimestamp(client)) + UNLOCK_DELAY_SECONDS;
       const escrowTransaction = timings.measure("escrow escrowTransaction (proof inputs)", () =>
         wasm.escrowTransaction(
           {
             private: {
               txContext: txContext(),
               tokenUtxosAssetA: [...deposited],
-              unlock: UNLOCK_TIMESTAMP,
+              unlock,
               amount: LOCK_AMOUNT,
             },
             public: {
@@ -151,7 +157,7 @@ describe("timelock escrow", () => {
                 key: creatorKey,
                 nullifierPk: creator.nullifierPublicKey(),
               },
-              unlock: UNLOCK_TIMESTAMP,
+              unlock,
             },
           },
         ],
@@ -180,17 +186,32 @@ describe("timelock escrow", () => {
         "withdraw SPP proveTransact (Go prover)",
         () => client.proveTransact(withdrawProofInputs, programKeys),
       );
-      const withdrawSlot = await send([
-        await withdrawInstruction({
-          programId,
-          client,
-          creator: signer,
-          authority,
-          proof: withdrawProof.compressedProof,
-          unlock: escrow.data.unlock,
-          transact: withdrawTransact,
-        }),
-      ]);
+      const withdraw = await withdrawInstruction({
+        programId,
+        client,
+        creator: signer,
+        authority,
+        proof: withdrawProof.compressedProof,
+        unlock: escrow.data.unlock,
+        transact: withdrawTransact,
+      });
+
+      if ((await chainUnixTimestamp(client)) > unlock)
+        throw new Error(
+          "the escrow unlocked before the early withdraw; raise UNLOCK_DELAY_SECONDS",
+        );
+      const early = await send([withdraw]).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(customErrorCode(early)).toBe(NOT_YET_UNLOCKED);
+
+      const deadline = Date.now() + Number(UNLOCK_DELAY_SECONDS + 30n) * 1000;
+      while ((await chainUnixTimestamp(client)) <= unlock) {
+        if (Date.now() > deadline) throw new Error("the localnet clock did not pass the unlock");
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+      const withdrawSlot = await send([withdraw]);
 
       const afterWithdraw = await creatorTransactions(client, creator, authority, withdrawSlot);
       expect({
